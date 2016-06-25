@@ -16,11 +16,20 @@ import redis.clients.jedis.Transaction;
 
 /**
  * Represents a Redis-backed web search index.
+ *index pages - by giving url and paragraphs from it
+ *then we can go into the index and get counts 
+ *the set of term counters - url to count
  * 
  */
+
+//LIST that contains all the URL sets?
+//URLSet - Redis set that contains the URLS that contain a given search term. key to URLs.
+//TermCounter, redis HASH - maps from each term that appears on a page
+//key for each term counter -> "TermCounter:" + ends with the URL of the page we are looking up
 public class JedisIndex {
 
 	private Jedis jedis;
+	//how to have map between String and Term Counter
 
 	/**
 	 * Constructor.
@@ -29,6 +38,10 @@ public class JedisIndex {
 	 */
 	public JedisIndex(Jedis jedis) {
 		this.jedis = jedis;
+		//clear original database - so no clutters
+		deleteURLSets();
+		deleteTermCounters();
+		deleteAllKeys();
 	}
 	
 	/**
@@ -68,7 +81,14 @@ public class JedisIndex {
 	 */
 	public Set<String> getURLs(String term) {
         // FILL THIS IN!
-		return null;
+        //URLSet - Redis set that contains the URLS that contain a given search term
+        String key = urlSetKey(term);
+        Set<String> urls = new HashSet<String>();
+        for(String url : jedis.smembers(key)){ 
+        	urls.add(url);
+        }
+
+		return urls;
 	}
 
     /**
@@ -78,8 +98,18 @@ public class JedisIndex {
 	 * @return Map from URL to count.
 	 */
 	public Map<String, Integer> getCounts(String term) {
-        // FILL THIS IN!
-		return null;
+        // check if there is a term counter for the url
+        Map<String, Integer> map = new HashMap<String, Integer>();
+        //1st, get each url that has this term
+        Set<String> urls = new HashSet<String>();
+        urls = this.getURLs(term);
+        //for each url, get the termcounter
+        for(String url: urls){
+        	String tcKey = termCounterKey(url);
+        	map.put(url, Integer.parseInt(jedis.hget(tcKey, term)));
+        }
+
+		return map;
 	}
 
     /**
@@ -91,7 +121,13 @@ public class JedisIndex {
 	 */
 	public Integer getCount(String url, String term) {
         // FILL THIS IN!
-		return null;
+        //use termcounter hashs
+        int count = 0;
+        if(isIndexed(url) == true){
+        	String tcKey = termCounterKey(url);
+        	count = Integer.parseInt(jedis.hget(tcKey, term));
+		}
+		return count;
 	}
 
 
@@ -103,6 +139,26 @@ public class JedisIndex {
 	 */
 	public void indexPage(String url, Elements paragraphs) {
         // FILL THIS IN!
+        //make a term counter and count the terms in the paragraphs
+        if(isIndexed(url) == false){ //dont index if already indexed
+	        TermCounter tc = new TermCounter(url);
+			tc.processElements(paragraphs);
+	        //for each term in the termcounter, add the termcounter to the index
+	        for (String term: tc.keySet()) {
+	        	//for each word on the page, we want to add to URLSet(term, url)
+	        	String urlKey = urlSetKey(term);
+	        	if(jedis.sismember(urlKey, url) == false){ //if the URLSet for the current term
+	        		//does not contain the current url
+	        		jedis.sadd(urlKey, url); //add this url to the urlset of that term
+	        	}
+	        	String tcKey = termCounterKey(url);
+	        	
+	        	int count = tc.get(term);
+	        	jedis.hset(tcKey, term, Integer.toString(count)); //create hash for term count
+				
+			}
+		}
+		printIndex();
 	}
 
 	/**

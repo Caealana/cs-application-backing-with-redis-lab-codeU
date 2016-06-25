@@ -9,6 +9,7 @@ import java.util.HashSet;
 import org.jsoup.nodes.Node;
 import org.jsoup.select.Elements;
 
+
 /**
  * Encapsulates a map from search term to set of TermCounter.
  * 
