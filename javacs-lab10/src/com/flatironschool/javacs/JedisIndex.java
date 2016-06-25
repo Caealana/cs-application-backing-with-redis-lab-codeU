@@ -39,9 +39,9 @@ public class JedisIndex {
 	public JedisIndex(Jedis jedis) {
 		this.jedis = jedis;
 		//clear original database - so no clutters
-		deleteURLSets();
-		deleteTermCounters();
-		deleteAllKeys();
+		//deleteURLSets();
+		//deleteTermCounters();
+		//deleteAllKeys();
 	}
 	
 	/**
@@ -101,12 +101,10 @@ public class JedisIndex {
         // check if there is a term counter for the url
         Map<String, Integer> map = new HashMap<String, Integer>();
         //1st, get each url that has this term
-        Set<String> urls = new HashSet<String>();
-        urls = this.getURLs(term);
+        Set<String> urls = this.getURLs(term);
         //for each url, get the termcounter
         for(String url: urls){
-        	String tcKey = termCounterKey(url);
-        	map.put(url, Integer.parseInt(jedis.hget(tcKey, term)));
+        	map.put(url, getCount(url, term));
         }
 
 		return map;
@@ -140,25 +138,24 @@ public class JedisIndex {
 	public void indexPage(String url, Elements paragraphs) {
         // FILL THIS IN!
         //make a term counter and count the terms in the paragraphs
-        if(isIndexed(url) == false){ //dont index if already indexed
+    	//dont index if already indexed
+    	Transaction transac = jedis.multi();
 	        TermCounter tc = new TermCounter(url);
+	       	String tcKey = termCounterKey(url);
 			tc.processElements(paragraphs);
+			transac.del(tcKey);//delete if already indexed
 	        //for each term in the termcounter, add the termcounter to the index
 	        for (String term: tc.keySet()) {
 	        	//for each word on the page, we want to add to URLSet(term, url)
 	        	String urlKey = urlSetKey(term);
-	        	if(jedis.sismember(urlKey, url) == false){ //if the URLSet for the current term
-	        		//does not contain the current url
-	        		jedis.sadd(urlKey, url); //add this url to the urlset of that term
-	        	}
-	        	String tcKey = termCounterKey(url);
-	        	
+
+	        	transac.sadd(urlKey, url); //add this url to the urlset of that term
 	        	int count = tc.get(term);
-	        	jedis.hset(tcKey, term, Integer.toString(count)); //create hash for term count
+	        	transac.hset(tcKey, term, Integer.toString(count)); //create hash for term count
 				
 			}
-		}
-		printIndex();
+		transac.exec();
+
 	}
 
 	/**
